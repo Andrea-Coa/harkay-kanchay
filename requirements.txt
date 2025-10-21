@@ -1,0 +1,11 @@
+ipykernel
+pandas
+selenium
+psycopg2-binary
+openpyxl
+fastapi[all] uvicorn
+sqlalchemy[asyncio] 
+asyncpg
+google-cloud-sql-connector[asyncpg]
+pydantic 
+python-dotenv

@@ -1,0 +1,9 @@
+.env
+.venv
+downloads
+descargas_demanda
+descargas_generacion
+clean-data
+__pycache__
+*.ipynb
+execute-once
