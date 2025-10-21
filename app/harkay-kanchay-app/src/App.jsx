@@ -1,4 +1,31 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+
+// --- Import Chart.js components ---
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+// NOTE: The date adapter that was causing an error has been removed.
+// We will handle dates manually using timestamps.
+
+// --- Register Chart.js components ---
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
 
 // --- Configuration ---
 const API_BASE_URL = 'http://127.0.0.1:8000';
@@ -33,10 +60,8 @@ export default function App() {
             case 'simulacion':
                 return <SimulacionIAPage />;
             case 'analisis':
-                // As per instructions, this page is ignored but kept for UI integrity
                 return <PlaceholderPage title="Análisis de Escenarios" />;
             case 'reportes':
-                 // As per instructions, this page is ignored but kept for UI integrity
                 return <PlaceholderPage title="Generación de Reportes" />;
             default:
                 return <DashboardPage />;
@@ -177,8 +202,13 @@ const DashboardPage = () => {
                     fetch(`${API_BASE_URL}/generacion/total?target_date=${today}`)
                 ]);
 
-                if (!demandaRes.ok || !generacionRes.ok) {
-                    throw new Error('Error al conectar con la API del COES.');
+                if (!demandaRes.ok) {
+                    const errorText = await demandaRes.text().catch(() => 'Could not read error body.');
+                    throw new Error(`API Error (Demanda): ${demandaRes.status} ${demandaRes.statusText}. Details: ${errorText}`);
+                }
+                if (!generacionRes.ok) {
+                    const errorText = await generacionRes.text().catch(() => 'Could not read error body.');
+                    throw new Error(`API Error (Generacion): ${generacionRes.status} ${generacionRes.statusText}. Details: ${errorText}`);
                 }
 
                 const demandaData = await demandaRes.json();
@@ -191,7 +221,13 @@ const DashboardPage = () => {
 
             } catch (err) {
                 setError(err.message);
-                console.error("Failed to fetch dashboard data:", err);
+                console.error("--- DASHBOARD FETCH ERROR ---");
+                console.error("Failed to fetch dashboard data. Error details below:");
+                console.error(err);
+                if (err.cause) {
+                    console.error("Error Cause:", err.cause);
+                }
+                console.error("-----------------------------");
             } finally {
                 setLoading(false);
             }
@@ -250,13 +286,10 @@ const SimulacionIAPage = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    const demandaChartRef = useRef(null);
-    const generacionChartRef = useRef(null);
-
     const handleRunSimulation = async () => {
         setLoading(true);
         setError(null);
-        if(simData) setSimData(null); // Clear previous results
+        if(simData) setSimData(null);
 
         const today = new Date();
         const startDate = formatDate(today);
@@ -266,7 +299,6 @@ const SimulacionIAPage = () => {
         const historyStartDate = formatDate(thirtyDaysAgo);
 
         try {
-            // Fetch all data in parallel
             const [
                 demandaHistRes, generacionHistRes,
                 demandaPredRes, generacionPredRes
@@ -277,8 +309,18 @@ const SimulacionIAPage = () => {
                 fetch(`${API_BASE_URL}/predict/generacion/?start_date=${startDate}`),
             ]);
 
-            if (!demandaHistRes.ok || !generacionHistRes.ok || !demandaPredRes.ok || !generacionPredRes.ok) {
-                 throw new Error('Una o más de las APIs de simulación fallaron.');
+            const responses = [
+                { name: 'Demanda Histórica', res: demandaHistRes },
+                { name: 'Generación Histórica', res: generacionHistRes },
+                { name: 'Predicción Demanda', res: demandaPredRes },
+                { name: 'Predicción Generación', res: generacionPredRes }
+            ];
+
+            for (const { name, res } of responses) {
+                if (!res.ok) {
+                    const errorText = await res.text().catch(() => 'Could not read error body.');
+                    throw new Error(`API Error (${name}): ${res.status} ${res.statusText}. Details: ${errorText}`);
+                }
             }
 
             const demandaHistData = await demandaHistRes.json();
@@ -286,7 +328,6 @@ const SimulacionIAPage = () => {
             const demandaPredData = await demandaPredRes.json();
             const generacionPredData = await generacionPredRes.json();
             
-            // Process historical demanda (aggregate by day)
             const dailyDemand = demandaHistData.reduce((acc, item) => {
                 const date = item.fecha_hora.split('T')[0];
                 acc[date] = (acc[date] || 0) + parseFloat(item.demanda);
@@ -294,7 +335,6 @@ const SimulacionIAPage = () => {
             }, {});
             const processedDemandaHist = Object.entries(dailyDemand).map(([date, value]) => ({ fecha: date, demanda: value }));
 
-            // Process historical generacion (aggregate by day)
             const dailyGeneration = generacionHistData.reduce((acc, item) => {
                 const date = item.fecha;
                 acc[date] = (acc[date] || 0) + parseFloat(item.generacion);
@@ -315,103 +355,99 @@ const SimulacionIAPage = () => {
 
         } catch (err) {
             setError(err.message);
-            console.error("Failed to run simulation:", err);
+            console.error("--- SIMULATION FETCH ERROR ---");
+            console.error("Failed to run simulation. Error details below:");
+            console.error(err);
+            if (err.cause) {
+                console.error("Error Cause:", err.cause);
+            }
+            console.error("------------------------------");
         } finally {
             setLoading(false);
         }
     };
     
-    useEffect(() => {
-        if (!simData) return;
-
-        // --- Cleanup previous charts ---
-        if (demandaChartRef.current) demandaChartRef.current.destroy();
-        if (generacionChartRef.current) generacionChartRef.current.destroy();
-
-        const chartOptions = {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: { 
-                    type: 'time',
-                    time: { unit: 'day' },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                    ticks: { color: 'rgba(255, 255, 255, 0.7)' }
-                },
-                y: { 
-                    beginAtZero: true,
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                    ticks: { color: 'rgba(255, 255, 255, 0.7)' }
+    // --- Chart Configuration ---
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            x: { 
+                type: 'linear', // Use linear scale for timestamps
+                grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                ticks: { 
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    // Add a callback to format the timestamp back to a readable date
+                    callback: function(value, index, values) {
+                        return new Date(value).toLocaleDateString('es-PE', {
+                            day: 'numeric', month: 'short'
+                        });
+                    },
+                    maxRotation: 45,
+                    minRotation: 45
                 }
             },
-            plugins: {
-                legend: { labels: { color: 'rgba(255, 255, 255, 0.9)' } },
-                tooltip: { 
-                    backgroundColor: 'rgba(0,0,0,0.7)',
-                    titleColor: '#fff',
-                    bodyColor: '#fff'
+            y: { 
+                beginAtZero: true,
+                grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                ticks: { color: 'rgba(255, 255, 255, 0.7)' }
+            }
+        },
+        plugins: {
+            legend: { labels: { color: 'rgba(255, 255, 255, 0.9)' } },
+            tooltip: { 
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                 callbacks: {
+                    title: function(tooltipItems) {
+                        const date = new Date(tooltipItems[0].parsed.x);
+                        return date.toLocaleDateString('es-PE', { dateStyle: 'long' });
+                    }
                 }
             }
-        };
-
-        // --- Create Demanda Chart ---
-        const demandaCtx = document.getElementById('demandaPredictionChart').getContext('2d');
-        demandaChartRef.current = new Chart(demandaCtx, {
-            type: 'line',
-            data: {
-                datasets: [
-                    {
-                        label: 'Demanda Histórica (MWh)',
-                        data: simData.demanda.historical.map(d => ({ x: d.fecha, y: d.demanda })),
-                        borderColor: '#3b82f6',
-                        backgroundColor: '#3b82f6',
-                        tension: 0.1
-                    },
-                    {
-                        label: 'Predicción Demanda (MWh)',
-                        data: simData.demanda.prediction.map(d => ({ x: d.fecha_hora.split('T')[0], y: d.prediccion })),
-                        borderColor: '#10b981',
-                        backgroundColor: '#10b981',
-                        borderDash: [5, 5],
-                        tension: 0.1
-                    }
-                ]
-            },
-            options: chartOptions
-        });
-
-        // --- Create Generación Chart ---
-        const generacionCtx = document.getElementById('generacionPredictionChart').getContext('2d');
-        generacionChartRef.current = new Chart(generacionCtx, {
-            type: 'line',
-            data: {
-                datasets: [
-                    {
-                        label: 'Generación Histórica (MWh)',
-                        data: simData.generacion.historical.map(d => ({ x: d.fecha, y: d.generacion })),
-                        borderColor: '#f97316',
-                        backgroundColor: '#f97316',
-                        tension: 0.1
-                    },
-                    {
-                        label: 'Predicción Generación (MWh)',
-                        data: simData.generacion.prediction.map(d => ({ x: d.fecha, y: d.prediccion })),
-                        borderColor: '#ec4899',
-                        backgroundColor: '#ec4899',
-                        borderDash: [5, 5],
-                        tension: 0.1
-                    }
-                ]
-            },
-            options: chartOptions
-        });
-        
-        return () => {
-             if (demandaChartRef.current) demandaChartRef.current.destroy();
-             if (generacionChartRef.current) generacionChartRef.current.destroy();
         }
+    };
 
-    }, [simData]);
+    const demandaChartData = simData ? {
+        datasets: [
+            {
+                label: 'Demanda Histórica (MWh)',
+                data: simData.demanda.historical.map(d => ({ x: new Date(d.fecha).getTime(), y: d.demanda })),
+                borderColor: '#3b82f6',
+                backgroundColor: '#3b82f6',
+                tension: 0.1
+            },
+            {
+                label: 'Predicción Demanda (MWh)',
+                data: simData.demanda.prediction.map(d => ({ x: new Date(d.fecha_hora.split('T')[0]).getTime(), y: d.prediccion })),
+                borderColor: '#10b981',
+                backgroundColor: '#10b981',
+                borderDash: [5, 5],
+                tension: 0.1
+            }
+        ]
+    } : { datasets: [] };
+    
+    const generacionChartData = simData ? {
+        datasets: [
+            {
+                label: 'Generación Histórica (MWh)',
+                data: simData.generacion.historical.map(d => ({ x: new Date(d.fecha).getTime(), y: d.generacion })),
+                borderColor: '#f97316',
+                backgroundColor: '#f97316',
+                tension: 0.1
+            },
+            {
+                label: 'Predicción Generación (MWh)',
+                data: simData.generacion.prediction.map(d => ({ x: new Date(d.fecha).getTime(), y: d.prediccion })),
+                borderColor: '#ec4899',
+                backgroundColor: '#ec4899',
+                borderDash: [5, 5],
+                tension: 0.1
+            }
+        ]
+    } : { datasets: [] };
 
     return (
         <div>
@@ -445,13 +481,13 @@ const SimulacionIAPage = () => {
                     <div className="bg-gray-700/50 p-6 rounded-lg">
                         <h3 className="text-xl font-semibold mb-4">Pronóstico de Demanda Eléctrica</h3>
                         <div className="h-96">
-                            <canvas id="demandaPredictionChart"></canvas>
+                            <Line options={chartOptions} data={demandaChartData} />
                         </div>
                     </div>
                      <div className="bg-gray-700/50 p-6 rounded-lg">
                         <h3 className="text-xl font-semibold mb-4">Pronóstico de Generación Eléctrica</h3>
                         <div className="h-96">
-                            <canvas id="generacionPredictionChart"></canvas>
+                             <Line options={chartOptions} data={generacionChartData} />
                         </div>
                     </div>
                 </div>
@@ -468,3 +504,4 @@ const PlaceholderPage = ({ title }) => (
         <p className="text-gray-400 max-w-md">Esta sección se encuentra en desarrollo. Vuelva pronto para descubrir nuevas funcionalidades de análisis y reportes energéticos.</p>
     </div>
 );
+
