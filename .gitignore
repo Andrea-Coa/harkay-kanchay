@@ -7,3 +7,5 @@ clean-data
 __pycache__
 *.ipynb
 execute-once
+
+node_modules

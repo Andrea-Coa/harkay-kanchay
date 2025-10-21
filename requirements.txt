@@ -3,9 +3,10 @@ pandas
 selenium
 psycopg2-binary
 openpyxl
-fastapi[all] uvicorn
+fastapi[all] 
+uvicorn
 sqlalchemy[asyncio] 
 asyncpg
-google-cloud-sql-connector[asyncpg]
+cloud-sql-python-connector[asyncpg]
 pydantic 
 python-dotenv

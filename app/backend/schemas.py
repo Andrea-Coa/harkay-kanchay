@@ -1,33 +1,54 @@
-# schemas.py
 from pydantic import BaseModel, ConfigDict
 from datetime import date, datetime
 from decimal import Decimal
 
-# Base model for Sequia
+# --- ORM Schemas (from database) ---
+
 class SequiaBase(BaseModel):
     fecha: date
     sequia: bool
 
-# Response model for Sequia (allows reading from ORM object)
 class Sequia(SequiaBase):
     model_config = ConfigDict(from_attributes=True)
 
-# Base model for Generacion
 class GeneracionBase(BaseModel):
     fecha: date
     tipo: str
     empresa: str
-    generacion: Decimal # Use Decimal for NUMERIC precision
+    generacion: Decimal
 
-# Response model for Generacion
 class Generacion(GeneracionBase):
     model_config = ConfigDict(from_attributes=True)
 
-# Base model for Demanda
 class DemandaBase(BaseModel):
     fecha_hora: datetime
-    demanda: Decimal # Use Decimal for NUMERIC precision
+    demanda: Decimal
 
-# Response model for Demanda
 class Demanda(DemandaBase):
     model_config = ConfigDict(from_attributes=True)
+
+# --- Prediction Schemas (for mock model) ---
+
+class DemandaPrediction(BaseModel):
+    """
+    Defines the response for a single demanda prediction point.
+    """
+    fecha_hora: datetime
+    prediccion: float # Using float is fine for mock data
+
+class GeneracionPrediction(BaseModel):
+    """
+    Defines the response for a single generacion prediction point.
+    """
+    fecha: date
+    prediccion: float
+
+# +++ NEW SCHEMAS FOR TOTALS +++
+
+class TotalGeneracion(BaseModel):
+    fecha: date
+    total_generacion: Decimal | float
+
+class TotalDemanda(BaseModel):
+    fecha: date
+    total_demanda: Decimal | float

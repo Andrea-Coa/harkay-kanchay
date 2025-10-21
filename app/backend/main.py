@@ -1,26 +1,22 @@
-# main.py
 from fastapi import FastAPI
-from routers import sequia, generacion, demanda
+from routers import sequia, generacion, demanda, prediction # <-- Import the new router
 import models
 from database import engine
 
-# The 'lifespan' function has been removed.
-
 app = FastAPI(
     title="Energy Data API",
-    description="API for Demanda, Generacion, and Sequia data from GCP SQL.",
-    version="1.0.0"
-    # 'lifespan' attribute removed
+    description="API for Demanda, Generacion, and Sequia data from GCP SQL, with mock predictions.",
+    version="1.1.0"
 )
 
 # Optional: Create tables if they don't exist.
-# You can run this once locally and then comment it out.
 models.Base.metadata.create_all(bind=engine)
 
-# Include the routers
+# Include all the routers
 app.include_router(sequia.router)
 app.include_router(generacion.router)
 app.include_router(demanda.router)
+app.include_router(prediction.router) # <-- Add the new prediction router
 
 @app.get("/", tags=["Root"])
 async def read_root():
