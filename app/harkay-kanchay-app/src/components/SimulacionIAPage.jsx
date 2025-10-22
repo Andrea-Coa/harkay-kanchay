@@ -9,9 +9,9 @@ import {
     Title,
     Tooltip,
     Legend,
-    ArcElement, // <-- MODIFICATION: Added for Donut Chart
+    ArcElement,
   } from 'chart.js';
-  import { Line, Doughnut } from 'react-chartjs-2'; // <-- MODIFICATION: Added Doughnut
+  import { Line, Doughnut } from 'react-chartjs-2';
   
   // --- Register Chart.js components ---
   ChartJS.register(
@@ -22,7 +22,7 @@ import {
     Title,
     Tooltip,
     Legend,
-    ArcElement // <-- MODIFICATION: Register ArcElement
+    ArcElement
   );
   
 
@@ -45,12 +45,19 @@ const SimulacionIAPage = () => {
         if(simData) setSimData(null);
 
         // Using a fixed date for consistent mock data fetching
-        const today = new Date('2023-01-01');
+        const today = new Date('2025-10-22');
+        today.setHours(7, 0, 0, 0)
         
-        const thirtyDaysAgo = new Date(today); // Clone date
+        const thirtyDaysAgo = new Date(today);
         thirtyDaysAgo.setDate(today.getDate() - 30);
-        const startDate = formatDate(thirtyDaysAgo);
-        const predictionStartDate = formatDate(today);
+        
+        const historicalStartDate = formatDate(today);
+        const predictionStartDate = formatDate(today); // For generacion
+        
+        // --- MODIFICATION: Create a full datetime object for the demanda prediction ---
+        // We use toISOString() to get the YYYY-MM-DDTHH:MM:SS.sssZ format,
+        // which FastAPI automatically understands.
+        const predictionStartDateTime = today.toISOString();
 
 
         try {
@@ -58,9 +65,10 @@ const SimulacionIAPage = () => {
                 demandaHistRes, generacionHistRes,
                 demandaPredRes, generacionPredRes
             ] = await Promise.all([
-                fetch(`${API_BASE_URL}/demanda/?start_date=${startDate}&num_days=30`),
-                fetch(`${API_BASE_URL}/generacion/?start_date=${startDate}&num_days=30`),
-                fetch(`${API_BASE_URL}/predict/demanda/?start_date=${predictionStartDate}`),
+                fetch(`${API_BASE_URL}/demanda/?start_date=${historicalStartDate}&num_days=30`),
+                fetch(`${API_BASE_URL}/generacion/?start_date=${historicalStartDate}&num_days=30`),
+                // --- MODIFICATION: Update the demanda prediction fetch call ---
+                fetch(`${API_BASE_URL}/predict/demanda/?start_datetime=${predictionStartDateTime}`),
                 fetch(`${API_BASE_URL}/predict/generacion/?start_date=${predictionStartDate}`),
             ]);
 
@@ -83,50 +91,115 @@ const SimulacionIAPage = () => {
             const demandaPredData = await demandaPredRes.json();
             const generacionPredData = await generacionPredRes.json();
             
-            // --- Process Historical Data (no changes needed here) ---
-            const dailyDemand = demandaHistData.reduce((acc, item) => {
+            // --- Process Data ---
+            const todayDateStr = formatDate(today); // "2025-10-22"
+
+            // --- Process Historical Demand ---
+            let todayHistDemandValue = 0;
+            const pastHistDemandMap = {};
+            demandaHistData.forEach(item => {
                 const date = item.fecha_hora.split('T')[0];
-                acc[date] = (acc[date] || 0) + parseFloat(item.demanda);
-                return acc;
-            }, {});
-            const processedDemandaHist = Object.entries(dailyDemand).map(([date, value]) => ({ fecha: date, demanda: value }));
+                const value = parseFloat(item.demanda) || 0;
+                if (date === todayDateStr) {
+                    todayHistDemandValue += value;
+                } else {
+                    pastHistDemandMap[date] = (pastHistDemandMap[date] || 0) + value;
+                }
+            });
+            const processedDemandaHist = Object.entries(pastHistDemandMap).map(([date, value]) => ({ fecha: date, demanda: value }));
 
-            const dailyGeneration = generacionHistData.reduce((acc, item) => {
-                const date = item.fecha;
-                acc[date] = (acc[date] || 0) + parseFloat(item.generacion);
-                return acc;
-            }, {});
-            const processedGeneracionHist = Object.entries(dailyGeneration).map(([date, value]) => ({ fecha: date, generacion: value }));
+            // --- Process Predicted Demand ---
+            // Find the last day in the prediction set to exclude it
+            const allDemandPredDates = [...new Set(demandaPredData.map(d => d.fecha_hora.split('T')[0]))].sort();
+            const maxDemandPredDate = allDemandPredDates.length > 0 ? allDemandPredDates[allDemandPredDates.length - 1] : null;
+
+            // Aggregate predictions, skipping the last day
+            const futurePredDemandMap = {};
+            demandaPredData.forEach(item => {
+                const date = item.fecha_hora.split('T')[0];
+                if (date === maxDemandPredDate) {
+                    return; // Skip data from the last day
+                }
+                futurePredDemandMap[date] = (futurePredDemandMap[date] || 0) + (parseFloat(item.prediccion) || 0);
+            });
+
+            // Combine "today's" historical and predicted values
+            const todayPredDemandValue = futurePredDemandMap[todayDateStr] || 0;
+            // const combinedTodayDemand = todayHistDemandValue + todayPredDemandValue;
+            const combinedTodayDemand =  todayHistDemandValue;
+
             
-            // --- MODIFICATION: Process Generation Prediction Data ---
+            // Set the combined value for "today" in the prediction map
+            if (todayHistDemandValue > 0 || todayPredDemandValue > 0) {
+                 futurePredDemandMap[todayDateStr] = combinedTodayDemand;
+            }
 
-            // 1. Aggregate daily generation totals for the Line Chart
-            const dailyGenerationPred = generacionPredData.reduce((acc, item) => {
+            // Convert prediction map to final array
+            const processedDemandaPred = Object.entries(futurePredDemandMap).map(([date, value]) => ({ fecha: date, prediccion: value }));
+
+            
+            // --- Process Historical Generation ---
+            let todayHistGenValue = 0;
+            const pastHistGenMap = {};
+            generacionHistData.forEach(item => {
                 const date = item.fecha;
-                acc[date] = (acc[date] || 0) + parseFloat(item.prediccion);
-                return acc;
-            }, {});
-            const processedGeneracionPred = Object.entries(dailyGenerationPred).map(([date, value]) => ({ fecha: date, prediccion: value }));
+                const value = parseFloat(item.generacion) || 0;
+                if (date === todayDateStr) {
+                    todayHistGenValue += value;
+                } else {
+                    pastHistGenMap[date] = (pastHistGenMap[date] || 0) + value;
+                }
+            });
+            const processedGeneracionHist = Object.entries(pastHistGenMap).map(([date, value]) => ({ fecha: date, generacion: value }));
 
-            // 2. Aggregate generation by type for the Donut Chart
-            const generationByType = generacionPredData.reduce((acc, item) => {
+            // --- Process Predicted Generation ---
+            // Find the last day to exclude it
+            const allGenPredDates = [...new Set(generacionPredData.map(d => d.fecha))].sort();
+            const maxGenPredDate = allGenPredDates.length > 0 ? allGenPredDates[allGenPredDates.length - 1] : null;
+
+            // Aggregate predictions (by day for line chart, by type for donut)
+            const futurePredGenMap = {};
+            const generationByType = {};
+            generacionPredData.forEach(item => {
+                const date = item.fecha;
+                if (date === maxGenPredDate) {
+                    return; // Skip data from the last day
+                }
+                
+                const value = parseFloat(item.prediccion) || 0;
+                
+                // For line chart (total per day)
+                futurePredGenMap[date] = (futurePredGenMap[date] || 0) + value;
+
+                // For donut chart (total per type, across all valid days)
                 const type = item.tipo;
-                // Capitalize first letter for display
                 const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
-                acc[capitalizedType] = (acc[capitalizedType] || 0) + parseFloat(item.prediccion);
-                return acc;
-            }, {});
+                generationByType[capitalizedType] = (generationByType[capitalizedType] || 0) + value;
+            });
 
+            // Combine "today's" historical and predicted values
+            const todayPredGenValue = futurePredGenMap[todayDateStr] || 0;
+            // const combinedTodayGen = todayHistGenValue + todayPredGenValue;
+            const combinedTodayGen = todayHistGenValue;
+
+            // Set the combined value for "today" in the prediction map
+             if (todayHistGenValue > 0 || todayPredGenValue > 0) {
+                futurePredGenMap[todayDateStr] = combinedTodayGen;
+             }
+
+            // Convert prediction map to final array
+            const processedGeneracionPred = Object.entries(futurePredGenMap).map(([date, value]) => ({ fecha: date, prediccion: value }));
+            
 
             setSimData({
                 demanda: {
                     historical: processedDemandaHist,
-                    prediction: demandaPredData
+                    prediction: processedDemandaPred 
                 },
                 generacion: {
                     historical: processedGeneracionHist,
-                    prediction: processedGeneracionPred, // Use aggregated daily data
-                    predictionByType: generationByType // Store new data for donut chart
+                    prediction: processedGeneracionPred,
+                    predictionByType: generationByType
                 }
             });
 
@@ -138,7 +211,7 @@ const SimulacionIAPage = () => {
         }
     };
     
-    // --- Chart Configurations ---
+    // --- Chart Configurations (unchanged) ---
     const lineChartOptions = {
         responsive: true,
         maintainAspectRatio: false,
@@ -195,7 +268,8 @@ const SimulacionIAPage = () => {
             },
             {
                 label: 'Predicción Demanda (MWh)',
-                data: simData.demanda.prediction.map(d => ({ x: new Date(d.fecha_hora).getTime(), y: d.prediccion })),
+                // --- FIX: Map the aggregated data, using d.fecha ---
+                data: simData.demanda.prediction.map(d => ({ x: new Date(d.fecha).getTime(), y: d.prediccion })),
                 borderColor: '#10b981',
                 borderDash: [5, 5],
             }
@@ -223,7 +297,7 @@ const SimulacionIAPage = () => {
         datasets: [{
             data: Object.values(simData.generacion.predictionByType),
             backgroundColor: ['#34d399', '#f87171', '#60a5fa', '#facc15'],
-            borderColor: '#1f2937', // bg-gray-800
+            borderColor: '#1f2937',
             borderWidth: 3,
             hoverOffset: 4
         }]
@@ -240,7 +314,6 @@ const SimulacionIAPage = () => {
                     disabled={loading}
                     className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center text-lg"
                 >
-                    {/* Button content (loading/default state) */}
                     {loading ? 'Procesando Simulación...' : 'Ejecutar Simulación IA'}
                 </button>
             </div>
@@ -249,14 +322,12 @@ const SimulacionIAPage = () => {
 
             {simData && (
                  <div className="space-y-8">
-                    {/* Demanda Chart */}
                     <div className="bg-gray-700/50 p-6 rounded-lg">
                         <h3 className="text-xl font-semibold mb-4">Pronóstico de Demanda Eléctrica</h3>
                         <div className="h-96">
                             <Line options={lineChartOptions} data={demandaChartData} />
                         </div>
                     </div>
-                    {/* MODIFICATION: Generation Charts in a Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         <div className="lg:col-span-2 bg-gray-700/50 p-6 rounded-lg">
                            <h3 className="text-xl font-semibold mb-4">Pronóstico de Generación Eléctrica (Total Diario)</h3>

@@ -7,6 +7,9 @@ from decimal import Decimal
 class SequiaBase(BaseModel):
     fecha: date
     sequia: bool
+    # +++ ADDED FIELDS +++
+    drought_streak: int
+    nondrought_streak: int
 
 class Sequia(SequiaBase):
     model_config = ConfigDict(from_attributes=True)
@@ -27,24 +30,24 @@ class DemandaBase(BaseModel):
 class Demanda(DemandaBase):
     model_config = ConfigDict(from_attributes=True)
 
-# --- Prediction Schemas (for mock model) ---
+# --- Prediction Schemas (for model output) ---
 
 class DemandaPrediction(BaseModel):
     """
     Defines the response for a single demanda prediction point.
     """
     fecha_hora: datetime
-    prediccion: float # Using float is fine for mock data
+    prediccion: float
 
 class GeneracionPrediction(BaseModel):
     """
     Defines the response for a single generacion prediction point.
     """
     fecha: date
-    tipo: str  # <-- MODIFICATION: Added type field
+    tipo: str
     prediccion: float
 
-# +++ NEW SCHEMAS FOR TOTALS +++
+# --- Schemas for Totals ---
 
 class TotalGeneracion(BaseModel):
     fecha: date

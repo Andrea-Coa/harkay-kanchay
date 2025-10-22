@@ -73,7 +73,7 @@ const DashboardPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <DashboardCard 
                     title="Demanda Ejecutada (Hoy)"
-                    value={loading ? 'Cargando...' : `${formatNumber(data.demanda)} MWh`}
+                    value={loading ? 'Cargando...' : `${formatNumber(data.demanda)} MW`}
                     icon="fa-bolt"
                     color="blue"
                 />

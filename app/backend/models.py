@@ -1,5 +1,4 @@
-# models.py
-from sqlalchemy import Column, TIMESTAMP, NUMERIC, TEXT, DATE, BOOLEAN, PrimaryKeyConstraint
+from sqlalchemy import Column, TIMESTAMP, NUMERIC, TEXT, DATE, BOOLEAN, PrimaryKeyConstraint, INTEGER
 from database import Base
 
 class Demanda(Base):
@@ -23,3 +22,6 @@ class Sequia(Base):
     __tablename__ = "sequia"
     fecha = Column(DATE, primary_key=True)
     sequia = Column(BOOLEAN, nullable=False)
+    # +++ ADDED COLUMNS +++
+    drought_streak = Column(INTEGER, nullable=False, default=0)
+    nondrought_streak = Column(INTEGER, nullable=False, default=0)
