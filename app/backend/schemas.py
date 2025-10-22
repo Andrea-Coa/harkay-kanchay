@@ -41,6 +41,7 @@ class GeneracionPrediction(BaseModel):
     Defines the response for a single generacion prediction point.
     """
     fecha: date
+    tipo: str  # <-- MODIFICATION: Added type field
     prediccion: float
 
 # +++ NEW SCHEMAS FOR TOTALS +++

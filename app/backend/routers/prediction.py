@@ -8,11 +8,12 @@ router = APIRouter(
     tags=["Predictions"]
 )
 
+# --- List of energy types for the new logic ---
+ENERGY_TYPES = ["eolica", "termoelectrica", "hidroelectrica", "solar"]
+
 @router.get("/demanda", response_model=list[schemas.DemandaPrediction])
 async def predict_demanda(
-    # The default value has been removed, making this parameter mandatory.
-    # Query(...) explicitly marks it as required.
-    start_date: date = Query(..., description="Mandatory start date for the prediction (YYYY-MM-DD).") # <-- Change made here
+    start_date: date = Query(..., description="Mandatory start date for the prediction (YYYY-MM-DD).")
 ):
     """
     Generates a mock 30-day forecast for energy demand.
@@ -22,14 +23,10 @@ async def predict_demanda(
     predictions = []
     total_intervals = 30 * 48  # 30 days, 48 half-hour intervals per day
 
-    # Combine the mandatory start date with midnight time
-    current_datetime = datetime.combine(start_date, datetime.min.time()) # <-- Logic simplified
+    current_datetime = datetime.combine(start_date, datetime.min.time())
 
     for i in range(total_intervals):
-        # Add a bit of random noise to the mock value
         mock_value = 6000 + random.uniform(-250, 250)
-        
-        # Calculate the timestamp for the current interval
         prediction_timestamp = current_datetime + timedelta(minutes=i * 30)
         
         predictions.append(
@@ -41,31 +38,47 @@ async def predict_demanda(
         
     return predictions
 
+# --- MODIFIED FUNCTION ---
+
 @router.get("/generacion", response_model=list[schemas.GeneracionPrediction])
 async def predict_generacion(
-    # The default value has been removed, making this parameter mandatory.
-    start_date: date = Query(..., description="Mandatory start date for the prediction (YYYY-MM-DD).") # <-- Change made here
+    start_date: date = Query(..., description="Mandatory start date for the prediction (YYYY-MM-DD).")
 ):
     """
-    Generates a mock 30-day forecast for energy generation.
+    Generates a mock 30-day forecast for energy generation *by type*.
     
-    The forecast provides one value per day.
+    The forecast provides one value per day for each energy type.
     """
     predictions = []
     
+    # Give each type a different base value for more realistic mock data
+    base_values = {
+        "eolica": 150 * 90,
+        "termoelectrica": 200 * 90,
+        "hidroelectrica": 100 * 20,
+        "solar": 50 * 50
+    }
+    
     for i in range(30): # 30 days of predictions
-        # Add a bit of random noise to the mock value
-        mock_value = 500 + random.uniform(-75, 75)
-        
         # Calculate the date for the current prediction
-        prediction_date = start_date + timedelta(days=i) # <-- Logic simplified
+        prediction_date = start_date + timedelta(days=i)
         
-        predictions.append(
-            schemas.GeneracionPrediction(
-                fecha=prediction_date,
-                prediccion=round(mock_value, 2)
-            )
-        )
-        
-    return predictions
+        # --- NEW: Loop through each energy type for the current day ---
+        for tipo in ENERGY_TYPES:
+            # Get base value and add some random noise
+            base_val = base_values[tipo]
+            noise_range = base_val * 0.2 # Add +/- 20% noise
+            mock_value = base_val + random.uniform(-noise_range, noise_range)
+            
+            # Ensure generation isn't negative
+            mock_value = max(0, mock_value) 
 
+            predictions.append(
+                schemas.GeneracionPrediction(
+                    fecha=prediction_date,
+                    tipo=tipo,  # <-- Add the type
+                    prediccion=round(mock_value, 2)
+                )
+            )
+            
+    return predictions
